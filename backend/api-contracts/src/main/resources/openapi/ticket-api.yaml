@@ -1,0 +1,241 @@
+openapi: 3.1.0
+info:
+  title: Ticket Platform API
+  version: 0.0.1
+  description: Support ticket management and AI suggestions
+
+servers:
+  - url: /api
+    description: API Gateway base path
+
+paths:
+  /tickets:
+    post:
+      summary: Create ticket
+      operationId: createTicket
+      tags: [tickets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTicketRequest'
+      responses:
+        '201':
+          description: Ticket created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '400':
+          description: Validation error
+      security: []
+
+    get:
+      summary: List tickets (paginated)
+      operationId: listTickets
+      tags: [tickets]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/Status'
+        - name: category
+          in: query
+          schema:
+            $ref: '#/components/schemas/Category'
+      responses:
+        '200':
+          description: Paginated ticket list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageResponse'
+      security: []
+
+  /tickets/{id}:
+    get:
+      summary: Get ticket by id
+      operationId: getTicketById
+      tags: [tickets]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          description: Ticket found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '404':
+          description: Ticket not found
+      security: []
+
+    patch:
+      summary: Update ticket status (admin)
+      operationId: updateTicketStatus
+      tags: [tickets, admin]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTicketStatusRequest'
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '400':
+          description: Validation error
+        '404':
+          description: Ticket not found
+      security:
+        - adminAuth: []
+
+  /tickets/{id}/ai-suggestion:
+    get:
+      summary: Fetch AI suggestion for ticket
+      operationId: getAiSuggestion
+      tags: [tickets, ai]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          description: AI suggestion
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiSuggestionResponse'
+        '404':
+          description: Ticket not found
+      security: []
+
+components:
+  parameters:
+    TicketId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    Category:
+      type: string
+      enum: [BILLING, TECHNICAL, ACCOUNT, GENERAL, FEEDBACK, OTHER]
+    Priority:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, URGENT]
+    Status:
+      type: string
+      enum: [OPEN, IN_PROGRESS, PENDING, AI_PROCESSED, RESOLVED, CLOSED]
+    ConfidenceScore:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, VERY_HIGH]
+
+    CreateTicketRequest:
+      type: object
+      required: [subject, description, category, priority, requesterEmail]
+      properties:
+        subject:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 5000
+        category:
+          $ref: '#/components/schemas/Category'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        requesterEmail:
+          type: string
+          format: email
+          maxLength: 255
+
+    TicketResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        subject:
+          type: string
+        description:
+          type: string
+        category:
+          $ref: '#/components/schemas/Category'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        status:
+          $ref: '#/components/schemas/Status'
+        requesterEmail:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UpdateTicketStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/Status'
+
+    AiSuggestionResponse:
+      type: object
+      properties:
+        suggestedCategory:
+          $ref: '#/components/schemas/Category'
+        suggestedPriority:
+          $ref: '#/components/schemas/Priority'
+        suggestedResponse:
+          type: string
+        confidenceScore:
+          $ref: '#/components/schemas/ConfidenceScore'
+        confidencePercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        reasoning:
+          type: string
+
+    PageResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketResponse'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+        totalPages:
+          type: integer
+        first:
+          type: boolean
+        last:
+          type: boolean

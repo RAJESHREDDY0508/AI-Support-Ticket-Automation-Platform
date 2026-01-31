@@ -1,0 +1,155 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-ticket_platform}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ticket_platform}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - app-network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.3
+    container_name: zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: ${ZOOKEEPER_PORT:-2181}
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "${ZOOKEEPER_PORT:-2181}:2181"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - app-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:${ZOOKEEPER_PORT:-2181}
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:${KAFKA_PORT:-9092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:29092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - app-network
+
+  # Placeholder services (built from Dockerfiles) - start with: docker compose --profile services up
+  api-gateway:
+    build:
+      context: ./backend
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: api-gateway
+    ports:
+      - "${API_GATEWAY_PORT:-8080}:8080"
+    profiles:
+      - services
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8080
+      TICKET_SERVICE_URL: http://ticket-service:8081/tickets
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ticket_platform}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    networks:
+      - app-network
+
+  ticket-service:
+    build:
+      context: ./backend
+      dockerfile: services/ticket-service/Dockerfile
+    container_name: ticket-service
+    ports:
+      - "${TICKET_SERVICE_PORT:-8081}:8081"
+    profiles:
+      - services
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8081
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-ticket_platform}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ticket_platform}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-change-me-in-production}
+    networks:
+      - app-network
+
+  ai-worker:
+    build:
+      context: ./backend/workers/ai-worker
+      dockerfile: Dockerfile
+    container_name: ai-worker
+    profiles:
+      - services
+    depends_on:
+      kafka:
+        condition: service_healthy
+      ticket-service:
+        condition: service_started
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      TOPIC_TICKET_CREATED: ticket.created.v1
+      TOPIC_DLQ: ticket.dlq.v1
+      KAFKA_GROUP_ID: ai-worker-v1
+      TICKET_SERVICE_URL: http://ticket-service:8081
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-change-me-in-production}
+      METRICS_PORT: 9090
+    ports:
+      - "${AI_WORKER_METRICS_PORT:-9090}:9090"
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    profiles:
+      - services
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

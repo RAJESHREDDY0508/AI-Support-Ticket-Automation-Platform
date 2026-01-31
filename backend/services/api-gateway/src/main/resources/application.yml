@@ -1,0 +1,26 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: api-gateway
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+  health:
+    default:
+      enabled: true
+
+# Gateway routes (simple REST forwarding targets)
+gateway:
+  routes:
+    ticket-service:
+      base-url: ${TICKET_SERVICE_URL:http://ticket-service:8081/tickets}
+      path-prefix: /api/tickets

@@ -1,0 +1,41 @@
+server:
+  port: ${SERVER_PORT:8081}
+
+app:
+  internal:
+    token: ${INTERNAL_API_TOKEN:}
+  outbox:
+    batch-size: 50
+    poll-interval-ms: 2000
+    max-retries: 5
+  kafka:
+    topic:
+      ticket-created: ticket.created.v1
+      ticket-ai-processed: ticket.ai_processed.v1
+      ticket-response-approved: ticket.response_approved.v1
+      dlq: ticket.dlq.v1
+
+spring:
+  application:
+    name: ticket-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:ticket_platform}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        default_schema: public
+    open-in-view: false
